@@ -1,20 +1,25 @@
-// ===== トップページの処理 =====
+// ===== ログインページの処理 =====
 // ----- モジュールの読み込み -----
-const { Hono } = require('hono'); //Honoのモジュールを読み込む
-const { html } = require('hono/html'); //HTMLへルパーを読み込む
+const { Hono } = require('hono');
+const { html } = require('hono/html');
 const layout = require('../layout');
 
 // ----- Honoアプリの作成 -----
-const app = new Hono(); //Honoインスタンスを作成。Honoの機能が使えるようになる。
+const app = new Hono();
 
-// ----- トップページの表示処理 -----
+// ----- ログイン処理 -----
 app.get('/', (c) => {
+  const { user } = c.get('session') ?? {};
   return c.html(
-    layout(
+    layout( //layout.jsで作成したlayout関数にtitle（'Login'）とbody（html`~`）を渡してHTMLを描画。少ない記述量で HTML を書ける。
       c,
-      'Home',
+      'Login',
       html`
-        <h1>Hello, Hono!</h1>
+        <h1>Login</h1>
+        <a href="/auth/github">GitHub でログイン</a>
+        ${user
+          ? html`<p>現在 ${user.login} でログイン中</p>`
+          : ''}
       `,
     ),
   );

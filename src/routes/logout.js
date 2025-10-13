@@ -1,23 +1,15 @@
-// ===== トップページの処理 =====
+// ===== ログアウトページの処理 =====
 // ----- モジュールの読み込み -----
-const { Hono } = require('hono'); //Honoのモジュールを読み込む
-const { html } = require('hono/html'); //HTMLへルパーを読み込む
-const layout = require('../layout');
+const { Hono } = require('hono');
 
 // ----- Honoアプリの作成 -----
-const app = new Hono(); //Honoインスタンスを作成。Honoの機能が使えるようになる。
+const app = new Hono();
 
-// ----- トップページの表示処理 -----
+// ----- ログアウト処理 -----
 app.get('/', (c) => {
-  return c.html(
-    layout(
-      c,
-      'Home',
-      html`
-        <h1>Hello, Hono!</h1>
-      `,
-    ),
-  );
+  const session = c.get('session'); //iron-session のセッションオブジェクトを受け取る
+  session?.destroy(); //セッションを破棄する
+  return c.redirect('/'); //トップページにリダイレクトする
 });
 
 // ----- アプリのエクスポート -----
