@@ -12,6 +12,7 @@ const { serveStatic } = require('@hono/node-server/serve-static'); //	Hono の N
 const { trimTrailingSlash } = require('hono/trailing-slash'); //URI の末尾にスラッシュがあるとき無視するミドルウェア
 const { githubAuth } = require('@hono/oauth-providers/github'); //Hono の認証用のミドルウェア OAuth Providers から GitHub 認証用のモジュールを読み込み
 const { getIronSession } = require('iron-session'); //セッション管理用のモジュール iron-session を読み込み。getIronSession はユーザから送信された Cookie からセッション情報を取り出すための関数
+const { PrismaClient } = require('@prisma/client'); //Prismaをインポートする
 const layout = require('./layout');
 
 // ----- ルートの読み込み -----
@@ -19,8 +20,9 @@ const indexRouter = require('./routes/index'); //　/にアクセスされたと
 const loginRouter = require('./routes/login');
 const logoutRouter = require('./routes/logout');
 
-// ----- Honoアプリの作成 -----
+// ----- アプリケーション・DBの初期化 -----
 const app = new Hono();
+const prisma = new PrismaClient({ log: [ 'query' ] });
 
 // ----- ミドルウェア登録 -----
 app.use(logger()); //ログ出力設定 //Honoのuse関数はミドルウェアを登録する関数
@@ -54,8 +56,24 @@ app.use('/auth/github', async (c, next) => {
 // GitHub 認証の後の処理　認証に成功するとGitHubからデータが送られてくる。データはOAuth Middlewareによって変数 'user-github' に格納されている
 app.get('/auth/github', async (c) => {
   const session = c.get('session');
-  session.user = c.get('user-github'); //user-github' に格納されている認証用のユーザ情報をc.getで取り出し、セッションオブジェクトに登録する
+  //session.user = c.get('user-github'); //user-github' に格納されている認証用のユーザ情報をc.getで取り出し、セッションオブジェクトに登録する
+  const githubUser = c.get('user-github'); //GitHubOAuthで認証が成功すると、ユーザ情報が'user-github'でContextに保存されるのでそれを取り出す。GitHubから返されたユーザ情報（例：id, login, avatar_urlなど）
+  session.user = { //認証に必要な情報だけを保持
+    id: githubUser.id,
+    login: githubUser.login
+  }
   await session.save(); //ユーザ情報を保存する
+  // ユーザ情報をデータベースに保存
+  const userId = session.user.id;
+  const data = {
+    userId,
+    username: session.user.login,
+  };
+  await prisma.user.upsert({ //upsert=存在すれば更新・なければ作成
+    where: { userId },
+    update: data,
+    create: data,
+  });
   return c.redirect('/'); //認証の処理が完了するのでトップページにリダイレクトする
 });
 

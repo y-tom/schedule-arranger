@@ -24,23 +24,23 @@ model User {
 }
 
 model Schedule {
-  scheduleId   String   @id @db.Uuid
-  scheduleName String   @db.VarChar(255)
-  memo         String   @db.Text
+  scheduleId   String      @id @db.Uuid
+  scheduleName String      @db.VarChar(255)
+  memo         String      @db.Text
   createdBy    Int
-  updatedAt    DateTime @db.Timestamptz(6)
-  user           User           @relation(fields: [createdBy], references: [userId], onDelete: Cascade)
-  candidates     Candidate[]
-  comments       Comment[]
+  updatedAt    DateTime    @db.Timestamptz(6)
+  user         User        @relation(fields: [createdBy], references: [userId], onDelete: Cascade)
+  candidates   Candidate[]
+  comments     Comment[]
 
   @@index(fields: [createdBy])
   @@map(name: "schedules")
 }
 
 model Candidate {
-  candidateId   Int    @id @default(autoincrement())
-  candidateName String @db.VarChar(255)
-  scheduleId    String @db.Uuid
+  candidateId    Int            @id @default(autoincrement())
+  candidateName  String         @db.VarChar(255)
+  scheduleId     String         @db.Uuid
   schedule       Schedule       @relation(fields: [scheduleId], references: [scheduleId], onDelete: Cascade)
   availabilities Availability[]
 
@@ -51,8 +51,8 @@ model Candidate {
 model Availability {
   candidateId  Int
   userId       Int
-  availability Int    @default(0)
-  scheduleId   String @db.Uuid
+  availability Int       @default(0)
+  scheduleId   String    @db.Uuid
   candidate    Candidate @relation(fields: [candidateId], references: [candidateId], onDelete: Cascade)
   user         User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
@@ -62,9 +62,9 @@ model Availability {
 }
 
 model Comment {
-  scheduleId String @db.Uuid
+  scheduleId String   @db.Uuid
   userId     Int
-  comment    String @db.VarChar(255)
+  comment    String   @db.VarChar(255)
   user       User     @relation(fields: [userId], references: [userId], onDelete: Cascade)
   schedule   Schedule @relation(fields: [scheduleId], references: [scheduleId], onDelete: Cascade)
 
