@@ -1,20 +1,75 @@
 // ===== トップページの処理 =====
 // ----- モジュールの読み込み -----
 const { Hono } = require('hono'); //Honoのモジュールを読み込む
-const { html } = require('hono/html'); //HTMLへルパーを読み込む
+const { html } = require('hono/html'); //HonoでHTMLを返すためのヘルパー。タグ付きテンプレートリテラル
 const layout = require('../layout');
+const { PrismaClient } = require('@prisma/client'); //Prismaをインポートする
+const prisma = new PrismaClient({ log: ['query'] }); //Prisma クライアントを作成
 
-// ----- Honoアプリの作成 -----
+// ----- アプリケーションの初期化 -----
 const app = new Hono(); //Honoインスタンスを作成。Honoの機能が使えるようになる。
 
-// ----- トップページの表示処理 -----
-app.get('/', (c) => {
+// ----- トップページの表示と、表示する予定をDBから取得する処理 -----
+//トップページのテンプレート
+function scheduleTable(schedules) {
+  return html`
+    <table>
+      <tr>
+        <th>予定名</th>
+        <th>更新日時</th>
+      </tr>
+      ${schedules.map(
+        (schedule) => html`
+          <tr>
+            <td>
+              <a href="/schedules/${schedule.scheduleId}">
+                ${schedule.scheduleName}
+              </a>
+            </td>
+            <td>${schedule.updatedAt}</td>
+          </tr>
+        `,
+      )}
+    </table>
+  `;
+}
+
+//表示処理、表示する予定をDBから取得する処理
+app.get('/', async (c) => { //asyncで非同期関数にする、awaitを使えるようになる
+  const { user } = c.get('session') ?? {}; //??=Null合体演算子 左側がnullまたはundefined //のときは右側を使う=セッションがなければ空のオブジェクト{}を使う
+  const schedules = user
+    ? await prisma.schedule.findMany({ //findManyは条件に合ったレコードをすべて取得するメソッド
+        where: { createdBy: user.id },
+        orderBy: { updatedAt: 'desc' },
+      })
+    : [];
   return c.html(
     layout(
       c,
-      'Home',
+      '予定調整くん',
       html`
-        <h1>Hello, Hono!</h1>
+        <h1>予定調整くん</h1>
+        <p>Welcome to 予定調整くん</p>
+        ${user //${user ? ... : ...} userが存在する（ログイン中）ならログアウトを表示、userが存在しない（未ログイン）ならログインを表示する
+          ? html`
+              <div>
+                <a href="/logout">${user.login} をログアウト</a>
+              </div>
+              <div>
+                <a href="/schedules/new">予定を作る</a>
+              </div>
+              ${schedules.length > 0
+                ? html`
+                    <h3>あなたの作った予定一覧</h3>
+                    ${scheduleTable(schedules)}
+                  `
+                : ''}
+            `
+          : html`
+              <div>
+                <a href="/login">ログイン</a>
+              </div>
+            `}
       `,
     ),
   );

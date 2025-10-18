@@ -4,12 +4,12 @@ const { Hono } = require('hono');
 const { html } = require('hono/html');
 const layout = require('../layout');
 
-// ----- Honoアプリの作成 -----
+// ----- アプリケーションの初期化 -----
 const app = new Hono();
 
 // ----- ログイン処理 -----
 app.get('/', (c) => {
-  const { user } = c.get('session') ?? {};
+  const { user } = c.get('session') ?? {}; //??=Null合体演算子 左側がnullまたはundefinedのときは右側を使う=セッションがなければ空のオブジェクト{}を使う
   return c.html(
     layout( //layout.jsで作成したlayout関数にtitle（'Login'）とbody（html`~`）を渡してHTMLを描画。少ない記述量で HTML を書ける。
       c,

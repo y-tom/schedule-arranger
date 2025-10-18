@@ -15,7 +15,7 @@
 # 2. サーバー・アプリ起動　※毎回
   yarn start
 
-  ※初回 or プロジェクトを初期化する場合のみ (package.json を生成する)
+  ※初期化　初回の初期設定 or プロジェクトを初期化する場合のみ (package.json を生成する)
   yarn init
 
 # 3. パッケージ
@@ -32,14 +32,17 @@
   # Prismaのインストール　※初回のみ
   yarn add -D prisma@5.13.0
 
-  # Prismaの初期化　※初回のみ（Prisma主要設定ファイルprisma/schema.prismaと、.envのDATABASE_URLが自動で追加される。--urlで接続データベースを指定）
+  # Prismaの初期化　※初回の初期設定時のみ（Prisma主要設定ファイルprisma/schema.prismaと、.envのDATABASE_URLが自動で追加される。--urlで接続データベースを指定）
   npx prisma init --url postgresql://postgres:postgres@db/schedule_arranger
 
-  # schema.prismaを整形する　※schema.prisma編集時のみ
+  # スキーマ整形　※schema.prisma変更時のみ
   npx prisma format
 
-  # Prismaの内容をデータベースに反映させる　※モデル変更時のみ
+  # データベースへのスキーマ反映　※モデル変更時のみ
   npx prisma db push
+
+  # Prismaクライアント生成　※schema.prisma変更時 or モデル変更時 or node_modules再生成時のみ
+  npx prisma generate
 
 # 5. DB
   # データ保存用の永続化ストレージ作成　※初回 or 再構築時のみ

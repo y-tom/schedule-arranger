@@ -1,8 +1,8 @@
 // ===== Honoアプリ全体の設定ファイル。ミドルウェア登録（ログ、静的ファイル、セキュリティヘッダーなど）、ルート登録、エラー処理など =====
 'use strict';
 
-// ----- モジュールの読み込み -----
-const { Hono } = require('hono'); //Hono 本体 ミドルウェア＝拡張機能
+// ----- モジュールの読み込み -----　require('XX')でモジュール読み込み、{XX}でオブジェクトの中から特定のプロパティだけ取り出す分割代入
+const { Hono } = require('hono'); //Honoのモジュール
 const { logger } = require('hono/logger'); //サイトにアクセスされた際のログを自動で出力ミドルウェア
 const { html } = require('hono/html'); //HonoでHTMLを返すためのヘルパー。タグ付きテンプレートリテラル
 const { HTTPException } = require('hono/http-exception'); //Hono で HTTP の例外を扱うためのモジュール
@@ -19,12 +19,13 @@ const layout = require('./layout');
 const indexRouter = require('./routes/index'); //　/にアクセスされたときの処理にroutes/index.jsのHonoインスタンスを設定
 const loginRouter = require('./routes/login');
 const logoutRouter = require('./routes/logout');
+const scheduleRouter = require('./routes/schedules');
 
 // ----- アプリケーション・DBの初期化 -----
 const app = new Hono();
 const prisma = new PrismaClient({ log: [ 'query' ] });
 
-// ----- ミドルウェア登録 -----
+// ----- ミドルウェア登録 ----- ミドルウェア＝リクエスト/レスポンスの間で挟む処理。元々のフレームワークの機能拡張としても使える。
 app.use(logger()); //ログ出力設定 //Honoのuse関数はミドルウェアを登録する関数
 app.use(serveStatic({ root: './public' })); //public 内の静的ファイルの配信設定
 app.use(secureHeaders()); //セキュリティの設定のためのヘッダを追加
@@ -53,7 +54,7 @@ app.use('/auth/github', async (c, next) => {
   return await authHandler(c, next);
 });
 
-// GitHub 認証の後の処理　認証に成功するとGitHubからデータが送られてくる。データはOAuth Middlewareによって変数 'user-github' に格納されている
+// ----- GitHub認証後の処理 ----- 認証に成功するとGitHubからデータが送られてくる。データはOAuth Middlewareによって変数 'user-github' に格納されている
 app.get('/auth/github', async (c) => {
   const session = c.get('session');
   //session.user = c.get('user-github'); //user-github' に格納されている認証用のユーザ情報をc.getで取り出し、セッションオブジェクトに登録する
@@ -81,6 +82,7 @@ app.get('/auth/github', async (c) => {
 app.route('/', indexRouter);
 app.route('/login', loginRouter);
 app.route('/logout', logoutRouter);
+app.route('/schedules', scheduleRouter);
 
 // ----- エラー処理 -----
 // 404 Not Found 　c=Contextオブジェクト。クライアントからのリクエストやクライアントに返すレスポンスなどを処理する関数などが含まれている
