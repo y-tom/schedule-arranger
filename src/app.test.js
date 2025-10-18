@@ -7,20 +7,49 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient({ log: ['query'] });
 
-// ----- テストの準備 -----
+// ----- テストの準備 ----- テスト用ユーザ情報の作成、よく使う操作の関数を作成
 //テスト用のユーザの情報testUserを準備する
 const testUser = {
   userId: 0,
   username: 'testuser',
 };
 
-//テスト用のセッションmockIronSessionを準備する
+//テスト用のセッションmockIronSessionを準備するための関数
 function mockIronSession() {
   const ironSession = require('iron-session'); // jest.spyOn関数は、特定のオブジェクトのメソッドを監視する関数　今回はgetIronSession関数を監視
   jest.spyOn(ironSession, 'getIronSession').mockReturnValue({ //mockFn.mockReturnValue関数でgetIronSession関数をモック化（テストを動かすための最低限の関数に変換）して、user/save/destroyを持つオブジェクトを返すようにしている
     user: { login: testUser.username, id: testUser.userId },
     save: jest.fn(), //セッション情報を保存
     destroy: jest.fn(), //セッション情報を破棄
+  });
+}
+
+// テストで作成したデータを削除するための関数
+async function deleteScheduleAggregate(scheduleId) {
+  await prisma.candidate.deleteMany({ where: { scheduleId } });
+  await prisma.schedule.delete({ where: { scheduleId } });
+}
+
+
+// フォームからリクエストを送信するための関数
+async function sendFormRequest(app, path, body) {
+  return app.request(path, {
+    method: 'POST',
+    body: new URLSearchParams(body),
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  });
+}
+
+// JSON を含んだリクエストを送信するための関数
+async function sendJsonRequest(app, path, body) {
+  return app.request(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+    },
   });
 }
 
@@ -83,9 +112,7 @@ describe('/schedules', () => {
   });
   afterAll(async () => { //afterAll関数はテストが終わった後に実行される関数
     jest.restoreAllMocks(); //jest.restoreAllMocks関数は、jest.spyOn で監視していたモックを元の値に戻す関数
-    // テストで作成したデータを削除
-    await prisma.candidate.deleteMany({ where: { scheduleId } }); //テストで使用した候補を削除
-    await prisma.schedule.delete({ where: { scheduleId } }); //テストで使用したスケジュールを削除
+    await deleteScheduleAggregate(scheduleId); // テストで作成したデータを削除
   });
 
   // ----- 予定が作成でき、表示されることのテスト -----
@@ -96,16 +123,10 @@ describe('/schedules', () => {
       update: testUser,
     });
     const app = require('./app');
-    const postRes = await app.request('/schedules', { //POST メソッドで /schedules にアクセスして予定と候補を作成
-      method: 'POST',
-      body: new URLSearchParams({
-        scheduleName: 'テスト予定1',
-        memo: 'テストメモ1\r\nテストメモ2',
-        candidates: 'テスト候補1\r\nテスト候補2\r\nテスト候補3',
-      }),
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded', //application/x-www-form-urlencodedはbodyの内容がURL形式でエンコードされたフォームデータであることを表している。フォームの内容を送信するときに使われるヘッダ
-      },
+       const postRes = await sendFormRequest(app, '/schedules', {
+      scheduleName: 'テスト予定1',
+      memo: 'テストメモ1\r\nテストメモ2',
+      candidates: 'テスト候補1\r\nテスト候補2\r\nテスト候補3',
     });
     const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
     expect(createdSchedulePath).toMatch(/schedules/); // expect(createdSchedulePath).toMatch(/schedules/) でリダイレクトされたパスが /schedules/ になっているかを検証

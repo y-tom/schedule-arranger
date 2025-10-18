@@ -75,6 +75,8 @@ app.post('/', async (c) => {
 // ----- 作成した予定を表示する処理 -----
 app.get('/:scheduleId', async (c) => {
   const { user } = c.get('session') ?? {};
+
+  // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
     where: { scheduleId: c.req.param('scheduleId') },
     include: { //includeは別のテーブルを結合してデータを取得するオプション
@@ -86,20 +88,62 @@ app.get('/:scheduleId', async (c) => {
       },
     },
   });
+
+  // 予定を指定する。予定が見つからなければ404notFound、予定が見つかれば候補日を作成日順で並べる
   if (!schedule) {
-    return c.notFound(); //予定が見つからない場合には404notFoundを表示する
+    return c.notFound(); //予定が見つからない場合には、404notFoundを表示する
   }
-  const candidates = await prisma.candidate.findMany({ //予定が見つかった場合は候補を作成日順で並べる
+  const candidates = await prisma.candidate.findMany({ //予定が見つかった場合には、候補日を作成日順で並べる
     where: { scheduleId: schedule.scheduleId },
     orderBy: { candidateId: 'asc' },
   });
-  const users = [
-    {
-      userId: user.id,
-      username: user.login,
+
+  // 指定した予定に対し、DB（availabilityテーブル）からすべての候補日と出欠を取得する。出欠のデフォルトは「欠席」
+  const availabilities = await prisma.availability.findMany({ //Prismaスキーマのavailabilityテーブルから条件にあう複数レコードを取得する
+    where: { scheduleId: schedule.scheduleId },
+    orderBy: { candidateId: 'asc' },
+    include: {
+      user: {
+        select: {
+          userId: true,
+          username: true,
+        },
+      },
     },
-  ];
-  //作成した予定を表示する画面のテンプレート
+  });
+  // 出欠 MapMap を作成する
+  const availabilityMapMap = new Map(); // key: userId, value: Map(key: candidateId, value: availability)
+  availabilities.forEach((a) => {
+    const map = availabilityMapMap.get(a.user.userId) || new Map(); //親の出欠 MapMap に、ユーザ ID の出欠 Map がある場合はその Map を、ない場合は新しい Map を準備する
+    map.set(a.candidateId, a.availability);
+    availabilityMapMap.set(a.user.userId, map);
+  });
+    // 閲覧ユーザと出欠に紐づくユーザからユーザ Map を作る
+  const userMap = new Map(); // key: userId, value: User
+  userMap.set(parseInt(user.id, 10), { //parseInt関数で数値に変換。10進数で値を取得
+    isSelf: true,
+    userId: parseInt(user.id, 10),
+    username: user.username,
+  });
+  availabilities.forEach((a) => {
+    userMap.set(a.user.userId, {
+      isSelf: parseInt(user.id, 10) === a.user.userId, // 閲覧ユーザ自身であるかを示す真偽値
+      userId: a.user.userId,
+      username: a.user.username,
+    });
+  });
+  // 全ユーザ、全候補で二重ループして、デフォルトで「欠席」を設定する（出欠の値がない場合には「欠席」）
+  const users = Array.from(userMap.values()); //ユーザMapの配列を作る処理
+  users.forEach((u) => { //ユーザと候補の二重ループの処理
+    candidates.forEach((c) => {
+      const map = availabilityMapMap.get(u.userId) || new Map();
+      const a = map.get(c.candidateId) || 0; // デフォルト値は 0 を使用
+      map.set(c.candidateId, a);
+      availabilityMapMap.set(u.userId, map);
+    });
+  });
+
+  //予定を表示する画面のテンプレート
   return c.html(
     layout(
       c,
@@ -118,13 +162,20 @@ app.get('/:scheduleId', async (c) => {
             (candidate) => html`
               <tr>
                 <th>${candidate.candidateName}</th>
-                ${users.map(
-                  (user) => html`
+                ${users.map((user) => {
+                  const availability = availabilityMapMap //ユーザと候補の出欠情報の取得
+                    .get(user.userId)
+                    .get(candidate.candidateId);
+                  const availabilityLabels = ['欠', '？', '出']; //出欠情報のラベルの定義を追加 0のときは欠、1のときは?、2のときは出
+                  const label = availabilityLabels[availability];
+                  return html`
                     <td>
-                      <button>欠席</button>
+                      ${user.isSelf
+                        ? html`<button>${label}</button>` //出欠情報に応じたラベルでボタンを表示
+                        : html`<p>${label}</p>`}
                     </td>
-                  `,
-                )}
+                  `;
+                })}
               </tr>
             `,
           )}
