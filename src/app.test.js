@@ -107,7 +107,7 @@ describe('/logout', () => {
   });
 });
 
-// ----- 予定作成時のテスト -----
+// ----- 予定作成のテスト -----
 describe('/schedules', () => {
   // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
   let scheduleId = '';
@@ -121,21 +121,28 @@ describe('/schedules', () => {
 
   // ----- 予定が作成でき、表示されることのテスト -----
   test('予定が作成でき、表示される', async () => {
+    //テストに使用するuserデータを追加
     await prisma.user.upsert({
       where: { userId: testUser.userId },
       create: testUser,
       update: testUser,
     });
+
+    // /schedulesで予定と候補を作成
     const app = require('./app');
-      const postRes = await sendFormRequest(app, '/schedules', {
+    const postRes = await sendFormRequest(app, '/schedules', {
       scheduleName: 'テスト予定1',
       memo: 'テストメモ1\r\nテストメモ2',
       candidates: 'テスト候補1\r\nテスト候補2\r\nテスト候補3',
     });
+
+    //リダイレクト
     const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
     expect(createdSchedulePath).toMatch(/schedules/); // expect(createdSchedulePath).toMatch(/schedules/) でリダイレクトされたパスが /schedules/ になっているかを検証
     expect(postRes.status).toBe(302); //ステータスコードが302 Found（一時的なリダイレクト）で返ることのテスト
-    scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得
+
+    //作成された予定と候補を表示
+    scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得し、予定IDを取得する
     const res = await app.request(createdSchedulePath);
     const body = await res.text();
     expect(body).toMatch(/テスト予定1/);
@@ -145,5 +152,59 @@ describe('/schedules', () => {
     expect(body).toMatch(/テスト候補2/);
     expect(body).toMatch(/テスト候補3/);
     expect(res.status).toBe(200); //ステータスコードが200 OKで返ることのテスト
+  });
+});
+
+// ----- 出欠更新のテスト -----
+describe('/schedules/:scheduleId/users/:userId/candidates/:candidateId', () => {
+  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
+  let scheduleId = '';
+  beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
+    mockIronSession(); //mockIronSessionはテスト用のセッション
+  });
+  afterAll(async () => { //afterAll関数はテストが終わった後に実行される関数
+    jest.restoreAllMocks(); //jest.restoreAllMocks関数は、jest.spyOn で監視していたモックを元の値に戻す関数
+    await deleteScheduleAggregate(scheduleId); // テストで作成したデータを削除
+  });
+
+  // ----- 出欠が更新できることのテスト -----
+  test('出欠が更新できる', async () => {
+    //テストに使用するuserデータを追加
+    await prisma.user.upsert({
+      where: { userId: testUser.userId },
+      create: testUser,
+      update: testUser,
+    });
+
+    //更新用の予定と候補を作成
+    const app = require('./app');
+    const postRes = await sendFormRequest(app, '/schedules', {
+      scheduleName: 'テスト出欠更新予定1',
+      memo: 'テスト出欠更新メモ1',
+      candidates: 'テスト出欠更新候補1',
+    });
+
+    const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
+    scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得し、予定IDを取得する
+
+    const candidate = await prisma.candidate.findFirst({ //予定に紐づく最初の候補を取得
+      where: { scheduleId },
+    });
+
+    const res = await sendJsonRequest( //sendJsonRequest関数で/schedules/:scheduleId/users/:userId/candidates/:candidateIdにPOSTでアクセス
+      app,
+      `/schedules/${scheduleId}/users/${testUser.userId}/candidates/${candidate.candidateId}`,
+      {
+        availability: 2,
+      },
+    );
+
+    expect(await res.json()).toEqual({ status: 'OK', availability: 2 }); //expect関数でリクエストのレスポンスに{'status':'OK','availability':2}という文字列が含まれるかどうかを検査
+
+    const availabilities = await prisma.availability.findMany({
+      where: { scheduleId },
+    });
+    expect(availabilities.length).toBe(1); //予定に関連する出欠情報が 1 つあることのテスト
+    expect(availabilities[0].availability).toBe(2); //その内容が更新された 2 であることをテスト
   });
 });
