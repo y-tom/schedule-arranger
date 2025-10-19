@@ -26,6 +26,7 @@ function mockIronSession() {
 
 // テストで作成したデータを削除するための関数
 async function deleteScheduleAggregate(scheduleId) {
+  await prisma.availability.deleteMany({ where: { scheduleId } });
   await prisma.candidate.deleteMany({ where: { scheduleId } });
   await prisma.schedule.delete({ where: { scheduleId } });
 }
@@ -67,7 +68,7 @@ describe('テストブロックの名前', () => {
 });
 */
 
-// ----- ログイン・ログアウトのテスト -----
+// ----- ログインのテスト -----
 describe('/login', () => {
   /// ----- テスト前後の準備 -----
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
@@ -93,19 +94,22 @@ describe('/login', () => {
     expect(await res.text()).toMatch(/testuser/); //HTMLのbody内のテキストを取得し、testuserという文字列が含まれることをテスト
     expect(res.status).toBe(200); //ステータスコードが200 OKで返ることのテスト
   });
+});
 
+// ----- ログアウトのテスト -----
+describe('/logout', () => {
   // ----- ログアウト時はリダイレクトされることのテスト -----
-  test('ログアウト時はリダイレクトされる', async () => {
+  test('ログアウト時に / へリダイレクトされる', async () => {
     const app = require('./app');
-    const res = await app.request('/logout'); // /looutにアクセス、app.jsで定義したappオブジェクトのrequestメソッドを呼び出し
-    expect(res.headers.get('Location')).toBe('/'); // /へリダイレクトされることをテスト
-    expect(res.status).toBe(302); //ステータスコードが302 Found（一時的なリダイレクト）で返ることのテスト
+    const res = await app.request('/logout');
+    expect(res.headers.get('Location')).toBe('/');
+    expect(res.status).toBe(302);
   });
 });
 
 // ----- 予定作成時のテスト -----
 describe('/schedules', () => {
-  // ----- テスト前後の準備（ログイン・ログアウトのテストと同様。作成データ削除を追加）-----
+  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
   let scheduleId = '';
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
     mockIronSession(); //mockIronSessionはテスト用のセッション
@@ -123,7 +127,7 @@ describe('/schedules', () => {
       update: testUser,
     });
     const app = require('./app');
-       const postRes = await sendFormRequest(app, '/schedules', {
+      const postRes = await sendFormRequest(app, '/schedules', {
       scheduleName: 'テスト予定1',
       memo: 'テストメモ1\r\nテストメモ2',
       candidates: 'テスト候補1\r\nテスト候補2\r\nテスト候補3',
