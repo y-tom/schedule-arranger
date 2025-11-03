@@ -142,6 +142,14 @@ app.get('/:scheduleId', async (c) => {
       availabilityMapMap.set(u.userId, map);
     });
   });
+  // コメント取得
+  const comments = await prisma.comment.findMany({ //findMany() で、予定に紐づいているコメントをすべて取得
+    where: { scheduleId: schedule.scheduleId }, //予定IDで検索
+  });
+  const commentMap = new Map(); // key: userId, value: comment ユーザIDをキーとして、コメントを値として保持するMapオブジェクトを作る
+  comments.forEach((comment) => {
+    commentMap.set(comment.userId, comment.comment);
+  });
 
   //予定を表示する画面のテンプレート
   return c.html(
@@ -170,8 +178,17 @@ app.get('/:scheduleId', async (c) => {
                   const label = availabilityLabels[availability];
                   return html`
                     <td>
-                      ${user.isSelf
-                        ? html`<button>${label}</button>` //出欠情報に応じたラベルでボタンを表示
+                      ${user.isSelf //更新できる出欠ボタンの作成。ユーザーが自分自身かどうか判別、出欠情報に応じたラベルでボタンを表示。自分自身の場合はボタンを表示、自分自身でない場合はただの<p>テキストとして出欠ラベルを表示
+                        //data-属性:HTMLの要素に独自のデータを保有させたい場合に利用する属性。予定ID/ユーザID/候補ID/出欠
+                        ? html`<button
+                            data-schedule-id="${schedule.scheduleId}"
+                            data-user-id="${user.userId}"
+                            data-candidate-id="${candidate.candidateId}"
+                            data-availability="${availability}"
+                            class="availability-toggle-button"
+                          >
+                            ${label}
+                          </button>`
                         : html`<p>${label}</p>`}
                     </td>
                   `;
@@ -179,6 +196,30 @@ app.get('/:scheduleId', async (c) => {
               </tr>
             `,
           )}
+          <tr>
+            <th>コメント</th>
+            ${users.map((user) => {
+              const comment = commentMap.get(user.userId); //テンプレートにコメントを追加。
+              // pタグには、自分自身なら、id="self-comment" をつけて他人のコメントと別の指示ができるようにする、コメント＋編集ボタンを表示する。自分自身でなければ、何もidにつけずコメントのみ表示する。
+              // button要素には、自分自身なら、予定IDユーザIDの属性をつけて、id="self-comment-button"とする。自分自身でなければ何もにidつけない。
+              return html`
+                <td>
+                  <p id="${user.isSelf ? "self-comment" : ""}">${comment}</p>
+                  ${user.isSelf
+                    ? html`
+                      <button
+                        data-schedule-id="${schedule.scheduleId}"
+                        data-user-id="${user.userId}"
+                        id="self-comment-button"
+                      >
+                        編集
+                      </button>
+                    `
+                    : ''}
+                </td>
+              `;
+            })}
+          </tr>
         </table>
       `,
     ),

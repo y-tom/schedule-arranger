@@ -28,7 +28,7 @@ app.post(
       availability,
     };
 
-    await prisma.availability.upsert({ //upsert()データがすでにあれば更新、なければ新規作成
+    await prisma.availability.upsert({ //upsert() データがすでにあれば更新、なければ新規作成
       where: { //where句で複合キーを指定
         availabilityCompositeId: {
           candidateId,
@@ -45,5 +45,5 @@ app.post(
 
 // ----- アプリのエクスポート -----
 module.exports = app; //他ファイルで require('./app') と書くとこのappが読み込める
-//テスト用でファイル単体で起動させるため、=appとしている
+// テスト用でファイル単体で起動させるため、=appとしている
 // 本来は複数ページをまとめて１つのアプリとして起動するため、メインのapp.jsに登録するためのルーターとして=routerとする。

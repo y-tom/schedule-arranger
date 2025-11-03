@@ -21,6 +21,7 @@ const loginRouter = require('./routes/login');
 const logoutRouter = require('./routes/logout');
 const scheduleRouter = require('./routes/schedules');
 const availabilitiesRouter = require('./routes/availabilities');
+const commentsRouter = require('./routes/comments');
 
 // ----- アプリケーション・DBの初期化 -----
 const app = new Hono();
@@ -85,6 +86,7 @@ app.route('/login', loginRouter);
 app.route('/logout', logoutRouter);
 app.route('/schedules', scheduleRouter);
 app.route('/schedules', availabilitiesRouter);
+app.route('/schedules', commentsRouter);
 
 // ----- エラー処理 -----
 // 404 Not Found 　c=Contextオブジェクト。クライアントからのリクエストやクライアントに返すレスポンスなどを処理する関数などが含まれている

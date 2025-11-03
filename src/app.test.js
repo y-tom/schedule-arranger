@@ -28,6 +28,7 @@ function mockIronSession() {
 async function deleteScheduleAggregate(scheduleId) {
   await prisma.availability.deleteMany({ where: { scheduleId } });
   await prisma.candidate.deleteMany({ where: { scheduleId } });
+  await prisma.comment.deleteMany({ where: { scheduleId } });
   await prisma.schedule.delete({ where: { scheduleId } });
 }
 
@@ -206,5 +207,59 @@ describe('/schedules/:scheduleId/users/:userId/candidates/:candidateId', () => {
     });
     expect(availabilities.length).toBe(1); //予定に関連する出欠情報が 1 つあることのテスト
     expect(availabilities[0].availability).toBe(2); //その内容が更新された 2 であることをテスト
+  });
+});
+
+// ----- コメント更新のテスト -----
+describe('/schedules/:scheduleId/users/:userId/comments', () => {
+  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
+  let scheduleId = '';
+  beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
+    mockIronSession(); //mockIronSessionはテスト用のセッション
+  });
+  afterAll(async () => { //afterAll関数はテストが終わった後に実行される関数
+    jest.restoreAllMocks(); //jest.restoreAllMocks関数は、jest.spyOn で監視していたモックを元の値に戻す関数
+    await deleteScheduleAggregate(scheduleId); // テストで作成したデータを削除
+  });
+
+  // ----- コメントが更新できることのテスト -----
+  test('コメントが更新できる', async () => {
+    //テストに使用するuserデータを追加
+    await prisma.user.upsert({
+      where: { userId: testUser.userId },
+      create: testUser,
+      update: testUser,
+    });
+
+    //更新用の予定と候補を作成
+    const app = require('./app');
+    const postRes = await sendFormRequest(app, '/schedules', {
+      scheduleName: 'テストコメント更新予定1',
+      memo: 'テストコメント更新メモ1',
+      candidates: 'テストコメント更新候補1',
+    });
+
+    const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
+    scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得し、予定IDを取得する
+
+    const candidate = await prisma.candidate.findFirst({ //予定に紐づく最初の候補を取得
+      where: { scheduleId },
+    });
+
+    const res = await sendJsonRequest( //sendJsonRequest関数で/schedules/:scheduleId/users/:userId/candidates/:candidateIdにPOSTでアクセス
+      app,
+      `/schedules/${scheduleId}/users/${testUser.userId}/comments`,
+      {
+        comment: 'testcomment',
+      },
+    );
+
+    expect(await res.json()).toEqual({ status: 'OK', comment: 'testcomment' }); //expect関数でリクエストのレスポンスに{'status':'OK',comment: 'testcomment'}という文字列が含まれるかどうかを検査
+
+    const comments = await prisma.comment.findMany({
+      where: { scheduleId },
+    });
+    expect(comments.length).toBe(1); //予定に関連するコメントが 1 つあることのテスト
+    expect(comments[0].comment).toBe('testcomment'); //その内容が更新された'testcommentS'であることをテスト
   });
 });

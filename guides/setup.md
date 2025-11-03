@@ -60,3 +60,7 @@
     \dt
     # クエリ例
     SELECT * FROM users;
+
+# 6. Webpack
+  # ES5に変換したファイルを作成　※初回 or public/javascripts/bundle.js作成時 のみ
+  npx webpack
