@@ -26,12 +26,9 @@ function mockIronSession() {
 
 // テストで作成したデータを削除するための関数
 async function deleteScheduleAggregate(scheduleId) {
-  await prisma.availability.deleteMany({ where: { scheduleId } });
-  await prisma.candidate.deleteMany({ where: { scheduleId } });
-  await prisma.comment.deleteMany({ where: { scheduleId } });
-  await prisma.schedule.delete({ where: { scheduleId } });
+  const { deleteScheduleAggregate } = require('./routes/schedules');
+  await deleteScheduleAggregate(scheduleId);
 }
-
 
 // フォームからリクエストを送信するための関数
 async function sendFormRequest(app, path, body) {
@@ -70,8 +67,8 @@ describe('テストブロックの名前', () => {
 */
 
 // ----- ログインのテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
 describe('/login', () => {
-  /// ----- テスト前後の準備 -----
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
     mockIronSession(); //mockIronSessionはテスト用のセッション
   });
@@ -109,8 +106,8 @@ describe('/logout', () => {
 });
 
 // ----- 予定作成のテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
 describe('/schedules', () => {
-  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
   let scheduleId = '';
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
     mockIronSession(); //mockIronSessionはテスト用のセッション
@@ -157,8 +154,8 @@ describe('/schedules', () => {
 });
 
 // ----- 出欠更新のテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
 describe('/schedules/:scheduleId/users/:userId/candidates/:candidateId', () => {
-  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
   let scheduleId = '';
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
     mockIronSession(); //mockIronSessionはテスト用のセッション
@@ -211,8 +208,8 @@ describe('/schedules/:scheduleId/users/:userId/candidates/:candidateId', () => {
 });
 
 // ----- コメント更新のテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
 describe('/schedules/:scheduleId/users/:userId/comments', () => {
-  // ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
   let scheduleId = '';
   beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
     mockIronSession(); //mockIronSessionはテスト用のセッション
@@ -261,5 +258,137 @@ describe('/schedules/:scheduleId/users/:userId/comments', () => {
     });
     expect(comments.length).toBe(1); //予定に関連するコメントが 1 つあることのテスト
     expect(comments[0].comment).toBe('testcomment'); //その内容が更新された'testcommentS'であることをテスト
+  });
+});
+
+// ----- 予定編集のテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
+describe('/schedules/:scheduleId/update', () => {
+  let scheduleId = '';
+  beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
+    mockIronSession(); //mockIronSessionはテスト用のセッション
+  });
+
+  afterAll(async () => { //afterAll関数はテストが終わった後に実行される関数
+    jest.restoreAllMocks(); //jest.restoreAllMocks関数は、jest.spyOn で監視していたモックを元の値に戻す関数
+    await deleteScheduleAggregate(scheduleId); // テストで作成したデータを削除
+  });
+
+// ----- 予定が編集できること、候補が追加できることのテスト -----
+  test('予定が更新でき、候補が追加できる', async () => {
+    //テストに使用するuserデータを追加
+    await prisma.user.upsert({
+      where: { userId: testUser.userId },
+      create: testUser,
+      update: testUser,
+    });
+
+    //更新用の予定と候補を作成
+    const app = require('./app');
+    const postRes = await sendFormRequest(app, '/schedules', {
+      scheduleName: 'テスト更新予定1',
+      memo: 'テスト更新メモ1',
+      candidates: 'テスト更新候補1',
+    });
+
+    const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
+    scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得し、予定IDを取得する
+
+    const res = await sendFormRequest(app, `/schedules/${scheduleId}/update`, {
+      scheduleName: 'テスト更新予定2',
+      memo: 'テスト更新メモ2',
+      candidates: 'テスト更新候補2',
+    });
+
+    const schedule = await prisma.schedule.findUnique({
+      where: { scheduleId },
+    });
+    expect(schedule.scheduleName).toBe('テスト更新予定2');
+    expect(schedule.memo).toBe('テスト更新メモ2');
+
+    const candidates = await prisma.candidate.findMany({
+      where: { scheduleId },
+      orderBy: { candidateId: 'asc' },
+    });
+    expect(candidates.length).toBe(2);
+    expect(candidates[0].candidateName).toBe('テスト更新候補1');
+    expect(candidates[1].candidateName).toBe('テスト更新候補2');
+  });
+});
+
+// ----- 削除機能のテスト -----
+// ----- テスト前後の準備（ログインのテストと同様。作成データ削除を追加）-----
+describe('/schedules/:scheduleId/delete', () => {
+  beforeAll(() => { //beforeAll関数は、テストが始まる前に実行される関数
+    mockIronSession(); //mockIronSessionはテスト用のセッション
+  });
+
+  afterAll(() => { //afterAll関数はテストが終わった後に実行される関数
+    jest.restoreAllMocks(); //jest.restoreAllMocks関数は、jest.spyOn で監視していたモックを元の値に戻す関数
+  });
+
+// ----- 予定を削除するときに、関連するすべての情報（コメント、出欠、候補、予定）が削除できることのテスト -----
+  test('予定に関連するすべての情報が削除できる', async () => {
+    //テストに使用するuserデータを追加
+    await prisma.user.upsert({
+      where: { userId: testUser.userId },
+      create: testUser,
+      update: testUser,
+    });
+
+    //削除用の予定と候補を作成
+    const app = require('./app');
+    const postRes = await sendFormRequest(app, '/schedules', {
+      scheduleName: 'テスト削除予定1',
+      memo: 'テスト削除メモ1',
+      candidates: 'テスト削除候補1',
+    });
+
+    const createdSchedulePath = postRes.headers.get('Location'); //postRes.headers.get('Location') でリダイレクトされたパスを取得
+    const scheduleId = createdSchedulePath.split('/schedules/')[1]; //リダイレクトされたパスの /schedules/ より右側の文字列を取得し、予定IDを取得する
+
+    // 出欠作成
+    const candidate = await prisma.candidate.findFirst({
+      where: { scheduleId },
+    });
+    await sendJsonRequest(
+      app,
+      `/schedules/${scheduleId}/users/${testUser.userId}/candidates/${candidate.candidateId}`,
+      {
+        availability: 2,
+      },
+    );
+
+    // コメント作成
+    await sendJsonRequest(
+      app,
+      `/schedules/${scheduleId}/users/${testUser.userId}/comments`,
+      {
+        comment: 'testcomment',
+      },
+    );
+
+    // 削除
+    const res = await sendFormRequest(app, `/schedules/${scheduleId}/delete`, {});
+    expect(res.status).toBe(302);
+
+    // 関連する情報は存在しないことを確かめる
+    const availabilities = await prisma.availability.findMany({
+      where: { scheduleId },
+    });
+    expect(availabilities.length).toBe(0); //出欠は存在しない
+
+    const candidates = await prisma.candidate.findMany({
+      where: { scheduleId },
+    });
+    expect(candidates.length).toBe(0); //候補は存在しない
+
+    const comments = await prisma.comment.findMany({ where: { scheduleId } });
+    expect(comments.length).toBe(0); //コメントは存在しない
+
+    const schedule = await prisma.schedule.findUnique({
+      where: { scheduleId },
+    });
+    expect(schedule).toBeNull(); //予定は存在しない
   });
 });

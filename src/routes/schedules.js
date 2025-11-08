@@ -1,4 +1,4 @@
-// ===== 予定作成フォームの処理 =====
+// ===== 予定作成・編集・削除フォームの処理 =====
 // ----- モジュールの読み込み -----
 const { Hono } = require('hono'); //Honoのモジュールを読み込む
 const { html } = require('hono/html');//HonoでHTMLを返すためのヘルパー。タグ付きテンプレートリテラル
@@ -14,8 +14,26 @@ const app = new Hono();
 // ----- ミドルウェア登録 -----
 app.use(ensureAuthenticated()); //認証チェックのミドルウェア
 
-// ----- 予定作成用の画面を表示する処理 -----
+// ----- 候補作成処理の共通化 -----
+async function createCandidates(candidateNames,scheduleId) {
+  const candidates = candidateNames.map((candidateName) => ({ //map関数を使って、取得した候補名の配列からDBに保存するCandidateオブジェクト（candidateNameとscheduleIdの2つのプロパティを持つ）を作成し、配列にまとめる
+    candidateName,
+    scheduleId,
+  }));
+  await prisma.candidate.createMany({ //createManyは一度に複数のレコードを作成できるメソッド dataには作成したCandidateオブジェクトの配列を指定
+    data: candidates,
+  });
+}
+function parseCandidateNames(candidatesStr){
+  return candidatesStr
+    .split('\n') //改行コードで文字列を分割
+    .map((s) => s.trim()) //map関数で配列を順に処理して新しい配列を作る、trim関数で文字列前後（ここでは入力フォームのテキスト）の空白を削除
+    .filter((s) => s !== ''); //filter関数で配列を条件で抽出 ここでは空文字列のデータを取り除いている
+}
+
+// ----- 予定作成フォーム -----
 app.get('/new', (c) => { // /schedules/new のパスにアクセスされたときに、フォームの HTML を返す
+  // 予定作成画面のテンプレート
   return c.html(
     layout(
       c,
@@ -41,10 +59,10 @@ app.get('/new', (c) => { // /schedules/new のパスにアクセスされたと�
   );
 });
 
-// ----- 予定作成用の画面で入力した内容を送信する処理 -----
-//PrismaのDB処理は基本的に非同期I/O。そのため適宜awaitをつける。メソッドチェーンで書きたい場合はthen 関数を使う。
+// 予定作成の内容を送信する処理
+// PrismaのDB処理は基本的に非同期I/O。そのため適宜awaitをつける。メソッドチェーンで書きたい場合はthen 関数を使う。
 app.post('/', async (c) => {
-  const { user } = c.get('session') ?? {};  //セッションからユーザの情報を取得 ??=Null合体演算子 左側がnullまたはundefinedのときは右側を使う=セッションがなければ空のオブジェクト{}を使う
+  const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
   const body = await c.req.parseBody(); //POSTで受け取ったフォームのデータを取得
   // 予定をDBに登録
   const { scheduleId } = await prisma.schedule.create({ //create()はテーブルに新しいレコードを作成するためのメソッド。createの前にawaitがあるので、次の処理は予定が保存し終わってから実行される。
@@ -57,24 +75,16 @@ app.post('/', async (c) => {
     },
   });
   // 候補日程を登録
-  const candidateNames = body.candidates
-    .split('\n') //改行コードで文字列を分割
-    .map((s) => s.trim()) //map関数で配列を順に処理して新しい配列を作る、trim関数で文字列前後（ここでは入力フォームのテキスト）の空白を削除
-    .filter((s) => s !== ''); //filter関数で配列を条件で抽出 ここでは空文字列のデータを取り除いている
-  const candidates = candidateNames.map((candidateName) => ({ //map関数を使って、取得した候補名の配列からDBに保存するCandidateオブジェクト（candidateNameとscheduleIdの2つのプロパティを持つ）を作成し、配列にまとめる
-    candidateName,
-    scheduleId,
-  }));
-  await prisma.candidate.createMany({ //createManyは一度に複数のレコードを作成できるメソッド dataには作成したCandidateオブジェクトの配列を指定
-    data: candidates,
-  });
+  const candidateNames = parseCandidateNames(body.candidates); //候補作成処理の共通化で作成した関数を使う
+  await createCandidates(candidateNames, scheduleId); //候補作成処理の共通化で作成した関数を使う
   // 作成した予定のページにリダイレクト
   return c.redirect('/schedules/' + scheduleId);
 });
 
-// ----- 作成した予定を表示する処理 -----
+// ----- 予定表示フォーム -----
+// 予定表示フォームにアクセスされたときの処理を追加
 app.get('/:scheduleId', async (c) => {
-  const { user } = c.get('session') ?? {};
+  const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
 
   // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
@@ -151,7 +161,7 @@ app.get('/:scheduleId', async (c) => {
     commentMap.set(comment.userId, comment.comment);
   });
 
-  //予定を表示する画面のテンプレート
+  //予定表示画面のテンプレート
   return c.html(
     layout(
       c,
@@ -160,6 +170,12 @@ app.get('/:scheduleId', async (c) => {
         <h4>${schedule.scheduleName}</h4>
         <p style="white-space: pre;">${schedule.memo}</p>
         <p>作成者: ${schedule.user.username}</p>
+        ${isMine(user.id, schedule)
+          ? html`
+            <a href="/schedules/${schedule.scheduleId}/edit">
+              この予定を編集する
+            </a>`
+        : ''}
         <h3>出欠表</h3>
         <table>
           <tr>
@@ -224,6 +240,128 @@ app.get('/:scheduleId', async (c) => {
       `,
     ),
   );
+});
+
+// ----- 予定編集フォーム -----
+//　現在ログインしているuserIdとscheduleと、予定の作成者が同じなのか判定し真偽値を返す関数を作成
+function isMine(userId, schedule) {
+  return schedule && parseInt(schedule.createdBy, 10) === parseInt(userId, 10);
+}
+// 予定編集フォームにアクセスされたときの処理を追加
+app.get('/:scheduleId/edit', async (c) => {
+  const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
+
+  // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
+  const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
+    where: { scheduleId: c.req.param('scheduleId') },
+  });
+
+  // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
+  if (!isMine(user.id, schedule)) {
+    return c.notFound(); //ログインユーザーと作成者が同じでない場合には、404notFoundを表示する
+  }
+  const candidates = await prisma.candidate.findMany({ //予定が見つかった場合には、候補日を作成日順で並べる
+    where: { scheduleId: schedule.scheduleId },
+    orderBy: { candidateId: 'asc' },
+  });
+
+// 予定編集画面のテンプレート
+  return c.html(
+    layout(
+      c,
+      `予定の編集: ${schedule.scheduleName}`,
+      html`
+        <form method="post" action="/schedules/${schedule.scheduleId}/update">
+         <div>
+            <h5>予定名</h5>
+            <input
+              type="text"
+              name="scheduleName"
+              value="${schedule.scheduleName}"
+            />
+          </div>
+          <div>
+            <h5>メモ</h5>
+            <textarea name="memo">${schedule.memo}</textarea>
+          </div>
+          <div>
+            <h5>既存の候補日程</h5>
+            <ul>
+              ${candidates.map(
+                (candidate) => html`<li>${candidate.candidateName}</li>`,
+              )}
+            </ul>
+            <p>候補日程の追加 (改行して複数入力してください)</p>
+            <textarea name="candidates"></textarea>
+          </div>
+          <button type="submit">以上の内容で予定を編集する</button>
+        </form>
+        <h3>危険な変更</h3>
+        <form method="post" action="/schedules/${schedule.scheduleId}/delete">
+          <button type="submit">この予定を削除する</button>
+        </form>
+      `,
+    ),
+  );
+});
+
+// 予定編集の内容を送信する処理
+// PrismaのDB処理は基本的に非同期I/O。そのため適宜awaitをつける。メソッドチェーンで書きたい場合はthen 関数を使う。
+app.post('/:scheduleId/update', async (c) => {
+  const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
+  // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
+  const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
+    where: { scheduleId: c.req.param('scheduleId') },
+  });
+  // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
+  if (!isMine(user.id, schedule)) {
+    return c.notFound(); //ログインユーザーと作成者が同じでない場合には、404notFoundを表示する
+  }
+
+  const body = await c.req.parseBody(); //POSTで受け取ったフォームのデータを取得
+  // 予定をDBに登録
+  const updatedSchedule = await prisma.schedule.update({ //update()は既存のレコードを更新するためのメソッド。updateの前にawaitがあるので、次の処理は予定が保存し終わってから実行される。
+    where: { scheduleId: schedule.scheduleId },
+    data: { //モデルで定義された属性を持つオブジェクトを指定
+      scheduleName: body.scheduleName.slice(0, 255) || '（名称未設定）', //データベース上で長さの制限があるため255文字以内に切り抜き
+      memo: body.memo, //リクエストから取得した情報を設定
+      updatedAt: new Date(), //現在時刻を設定
+    },
+  });
+
+  // 候補が追加されているかチェック
+  const candidateNames = parseCandidateNames(body.candidates); //候補作成処理の共通化で作成した関数を使う
+  if(candidateNames.length){ //配列の長さをチェック。配列の長さが0=空の場合false、1以上の場合true。配列に1つ以上要素が入っている場合のみ{}内を実行する
+    await createCandidates(candidateNames, updatedSchedule.scheduleId); //候補作成処理の共通化で作成した関数を使う
+  }
+  // 作成した予定のページにリダイレクト
+  return c.redirect('/schedules/' + updatedSchedule.scheduleId);
+});
+
+// ----- 予定削除処理（削除用のフォームはないので予定編集フォームに削除ボタンを追加する） -----
+// データを削除するための関数
+async function deleteScheduleAggregate(scheduleId) {
+  await prisma.availability.deleteMany({ where: { scheduleId } });
+  await prisma.candidate.deleteMany({ where: { scheduleId } });
+  await prisma.comment.deleteMany({ where: { scheduleId } });
+  await prisma.schedule.delete({ where: { scheduleId } });
+}
+app.deleteScheduleAggregate = deleteScheduleAggregate;
+
+app.post('/:scheduleId/delete', async (c) => {
+  const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
+  // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
+  const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
+    where: { scheduleId: c.req.param('scheduleId') },
+  });
+  // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
+  if (!isMine(user.id, schedule)) {
+    return c.notFound(); //ログインユーザーと作成者が同じでない場合には、404notFoundを表示する
+  }
+  // 削除処理を実行
+  await deleteScheduleAggregate(schedule.scheduleId);
+  // トップページにリダイレクト
+  return c.redirect('/');
 });
 
 // ----- アプリのエクスポート -----
