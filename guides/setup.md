@@ -64,3 +64,10 @@
 # 6. Webpack
   # ES5に変換したファイルを作成　※初回 or public/javascripts/bundle.js作成時 のみ
   npx webpack
+
+# 7.Bootstrapb ※初回のみ
+  # bootstrap(Bootstrap本体)、@popperjs/core(Bootstrapが依存しているライブラリ)をインストール
+  yarn add bootstrap@5.3.3 @popperjs/core@2.11.8
+  # Bootstrapをwebpackでバンドルするために必要なライブラリインストール
+  # css-loadeはCSSファイルをJavaScriptモジュールとしてインポートする。mini-css-extract-pluginはCSSを独立したファイルとして出力する。
+  yarn add -D css-loader@6.10.0 mini-css-extract-plugin@2.8.0

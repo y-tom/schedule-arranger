@@ -39,20 +39,20 @@ app.get('/new', (c) => { // /schedules/new のパスにアクセスされたと�
       c,
       '予定の作成',
       html`
-        <form method="post" action="/schedules">
-          <div>
-            <h5>予定名</h5>
-            <input type="text" name="scheduleName" />
+        <form method="post" action="/schedules" class="my-3">
+          <div class="my-3">
+            <label class="form-label">予定名</label>
+            <input type="text" name="scheduleName" class="form-control" />
           </div>
-          <div>
-            <h5>メモ</h5>
-            <textarea name="memo"></textarea>
+          <div class="my-3">
+            <label class="form-label">メモ</label>
+            <textarea name="memo" class="form-control"></textarea>
           </div>
-          <div>
-            <h5>候補日程 (改行して複数入力してください)</h5>
-            <textarea name="candidates"></textarea>
+          <div class="my-3">
+            <label class="form-label">候補日程 (改行して複数入力してください)</label>
+            <textarea name="candidates" class="form-control"></textarea>
           </div>
-          <button type="submit">予定をつくる</button>
+          <button class="btn btn-primary" type="submit">予定をつくる</button>
         </form>
       `,
     ),
@@ -162,81 +162,96 @@ app.get('/:scheduleId', async (c) => {
   });
 
   //予定表示画面のテンプレート
+  const buttonStyles = ['btn-danger', 'btn-secondary', 'btn-success'];
+
   return c.html(
     layout(
       c,
       `予定: ${schedule.scheduleName}`,
       html`
-        <h4>${schedule.scheduleName}</h4>
-        <p style="white-space: pre;">${schedule.memo}</p>
-        <p>作成者: ${schedule.user.username}</p>
+        <div class="card my-3">
+          <h4 class="card-header">${schedule.scheduleName}</h4>
+          <div class="card-body">
+            <p style="white-space: pre;">${schedule.memo}</p>
+          </div>
+          <div class="card-footer">作成者: ${schedule.user.username}</div>
+        </div>
         ${isMine(user.id, schedule)
           ? html`
-            <a href="/schedules/${schedule.scheduleId}/edit">
-              この予定を編集する
+              <a
+                href="/schedules/${schedule.scheduleId}/edit"
+                class="btn btn-primary"
+              >
+              この予定を編集する <i class="bi bi-pencil"></i>
             </a>`
         : ''}
-        <h3>出欠表</h3>
-        <table>
-          <tr>
-            <th>予定</th>
-            ${users.map((user) => html`<th>${user.username}</th>`)}
-          </tr>
-          ${candidates.map(
-            (candidate) => html`
-              <tr>
-                <th>${candidate.candidateName}</th>
-                ${users.map((user) => {
-                  const availability = availabilityMapMap //ユーザと候補の出欠情報の取得
-                    .get(user.userId)
-                    .get(candidate.candidateId);
-                  const availabilityLabels = ['欠', '？', '出']; //出欠情報のラベルの定義を追加 0のときは欠、1のときは?、2のときは出
-                  const label = availabilityLabels[availability];
-                  return html`
-                    <td>
-                      ${user.isSelf //更新できる出欠ボタンの作成。ユーザーが自分自身かどうか判別、出欠情報に応じたラベルでボタンを表示。自分自身の場合はボタンを表示、自分自身でない場合はただの<p>テキストとして出欠ラベルを表示
-                        //data-属性:HTMLの要素に独自のデータを保有させたい場合に利用する属性。予定ID/ユーザID/候補ID/出欠
-                        ? html`<button
+        <h3 class="my-3">出欠表</h3>
+        <div class="table-responsive">
+          <table class="table table-bordered">
+            <tr>
+              <th>予定</th>
+              ${users.map((user) => html`<th>${user.username}</th>`)}
+            </tr>
+            ${candidates.map(
+              (candidate) => html`
+                <tr>
+                  <th>${candidate.candidateName}</th>
+                  ${users.map((user) => {
+                    const availability = availabilityMapMap
+                      .get(user.userId)
+                      .get(candidate.candidateId);
+                    const availabilityLabels = ['欠', '？', '出'];
+                    const label = availabilityLabels[availability];
+                    return html`
+                      <td>
+                        ${user.isSelf
+                          ? html`<button
+                              data-schedule-id="${schedule.scheduleId}"
+                              data-user-id="${user.userId}"
+                              data-candidate-id="${candidate.candidateId}"
+                              data-availability="${availability}"
+                              class="availability-toggle-button btn btn-lg ${buttonStyles[
+                                availability
+                              ]}"
+                            >
+                              ${label}
+                            </button>`
+                          : html`<h3>${label}</h3>`}
+                      </td>
+                    `;
+                  })}
+                </tr>
+              `,
+            )}
+            <tr>
+              <th>コメント</th>
+              ${users.map((user) => {
+                const comment = commentMap.get(user.userId);
+                return html`
+                  <td>
+                    <p>
+                      <small id="${user.isSelf ? "self-comment" : ""}">
+                        ${comment}
+                      </small>
+                    </p>
+                    ${user.isSelf
+                      ? html`
+                          <button
                             data-schedule-id="${schedule.scheduleId}"
                             data-user-id="${user.userId}"
-                            data-candidate-id="${candidate.candidateId}"
-                            data-availability="${availability}"
-                            class="availability-toggle-button"
+                            id="self-comment-button"
+                            class="btn btn-info"
                           >
-                            ${label}
-                          </button>`
-                        : html`<p>${label}</p>`}
-                    </td>
-                  `;
-                })}
-              </tr>
-            `,
-          )}
-          <tr>
-            <th>コメント</th>
-            ${users.map((user) => {
-              const comment = commentMap.get(user.userId); //テンプレートにコメントを追加。
-              // pタグには、自分自身なら、id="self-comment" をつけて他人のコメントと別の指示ができるようにする、コメント＋編集ボタンを表示する。自分自身でなければ、何もidにつけずコメントのみ表示する。
-              // button要素には、自分自身なら、予定IDユーザIDの属性をつけて、id="self-comment-button"とする。自分自身でなければ何もにidつけない。
-              return html`
-                <td>
-                  <p id="${user.isSelf ? "self-comment" : ""}">${comment}</p>
-                  ${user.isSelf
-                    ? html`
-                      <button
-                        data-schedule-id="${schedule.scheduleId}"
-                        data-user-id="${user.userId}"
-                        id="self-comment-button"
-                      >
-                        編集
-                      </button>
-                    `
-                    : ''}
-                </td>
-              `;
-            })}
-          </tr>
-        </table>
+                            編集
+                          </button>
+                        `
+                      : ''}
+                  </td>
+                `;
+              })}
+            </tr>
+          </table>
+        </div>
       `,
     ),
   );
@@ -271,34 +286,42 @@ app.get('/:scheduleId/edit', async (c) => {
       c,
       `予定の編集: ${schedule.scheduleName}`,
       html`
-        <form method="post" action="/schedules/${schedule.scheduleId}/update">
-         <div>
-            <h5>予定名</h5>
+        <form
+          class="my-3"
+          method="post"
+          action="/schedules/${schedule.scheduleId}/update"
+        >
+          <div class="mb-3">
+            <label class="form-label">予定名</label>
             <input
               type="text"
               name="scheduleName"
+              class="form-control"
               value="${schedule.scheduleName}"
             />
           </div>
-          <div>
-            <h5>メモ</h5>
-            <textarea name="memo">${schedule.memo}</textarea>
+          <div class="mb-3">
+            <label class="form-label">メモ</label>
+            <textarea name="memo" class="form-control">${schedule.memo}</textarea>
           </div>
-          <div>
-            <h5>既存の候補日程</h5>
-            <ul>
+          <div class="mb-3">
+            <label class="form-label">既存の候補日程</label>
+            <ul class="list-group mb-2">
               ${candidates.map(
-                (candidate) => html`<li>${candidate.candidateName}</li>`,
+                (candidate) =>
+                  html`<li class="list-group-item">${candidate.candidateName}</li>`,
               )}
             </ul>
             <p>候補日程の追加 (改行して複数入力してください)</p>
-            <textarea name="candidates"></textarea>
+            <textarea name="candidates" class="form-control"></textarea>
           </div>
-          <button type="submit">以上の内容で予定を編集する</button>
+          <button type="submit" class="btn btn-primary">以上の内容で予定を編集する <i class="bi bi-pencil"></i>
+          </button>
         </form>
-        <h3>危険な変更</h3>
+        <h3 class="my-3">危険な変更</h3>
         <form method="post" action="/schedules/${schedule.scheduleId}/delete">
-          <button type="submit">この予定を削除する</button>
+          <button type="submit" class="btn btn-danger">この予定を削除する <i class="bi bi-pencil"></i>
+          </button>
         </form>
       `,
     ),

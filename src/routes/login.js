@@ -9,17 +9,14 @@ const app = new Hono();
 
 // ----- ログイン処理 -----
 app.get('/', (c) => {
-  const { user } = c.get('session') ?? {}; //??=Null合体演算子 左側がnullまたはundefinedのときは右側を使う=セッションがなければ空のオブジェクト{}を使う
   return c.html(
     layout( //layout.jsで作成したlayout関数にtitle（'Login'）とbody（html`~`）を渡してHTMLを描画。少ない記述量で HTML を書ける。
       c,
       'Login',
       html`
-        <h1>Login</h1>
-        <a href="/auth/github">GitHub でログイン</a>
-        ${user
-          ? html`<p>現在 ${user.login} でログイン中</p>`
-          : ''}
+        <a href="/auth/github" class="btn btn-primary my-3">
+          GitHub でログイン
+        </a>
       `,
     ),
   );
