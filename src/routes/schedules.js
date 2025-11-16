@@ -5,14 +5,46 @@ const { html } = require('hono/html');//HonoでHTMLを返すためのヘルパ�
 const layout = require('../layout');
 const ensureAuthenticated = require('../middlewares/ensure-authenticated');
 const { randomUUID } = require('node:crypto'); //バージョン 4 の UUID を生成
-const { PrismaClient } = require('@prisma/client'); //Prismaをインポートする
+const { PrismaClient } = require('@prisma/client'); //Prismaをインポート
 const prisma = new PrismaClient({ log: ['query'] }); //Prisma クライアントを作成
+const { z } = require('zod'); //Zod(バリデーション作成)をインポート
+const { zValidator } = require('@hono/zod-validator'); //zValidator(Zodを利用したバリデーションミドルウェアを作る)をインポート
+const { HTTPException } = require('hono/http-exception'); //HTTPException（例外クラス）のインポート
 
 // ----- アプリケーションの初期化 -----
 const app = new Hono();
 
 // ----- ミドルウェア登録 -----
 app.use(ensureAuthenticated()); //認証チェックのミドルウェア
+
+// ----- バリデーション -----
+// さまざまなパラメータが想定した正しい値であるかを検証するためのバリデータを実装する
+const scheduleIdValidator = zValidator(
+  'param', //パラメータの種類
+  z.object({ //バリデーションするパラメータのスキーマ
+    scheduleId: z.string().uuid(),
+  }),
+  (result) => { //バリデーションの後の処理
+    if (!result.success) {
+      throw new HTTPException(400, { message: 'URL の形式が正しくありません。' });
+    }
+  }
+);
+
+// フォームから送信されるデータのバリデータを作成する
+const scheduleFormValidator = zValidator(
+  'form',
+  z.object({
+    scheduleName: z.string(),
+    memo: z.string(),
+    candidates: z.string(),
+  }),
+  (result) => {
+    if (!result.success) {
+      throw new HTTPException(400, { message: '入力された情報が不十分または正しくありません' });
+    }
+  }
+);
 
 // ----- 候補作成処理の共通化 -----
 async function createCandidates(candidateNames,scheduleId) {
@@ -40,15 +72,15 @@ app.get('/new', (c) => { // /schedules/new のパスにアクセスされたと�
       '予定の作成',
       html`
         <form method="post" action="/schedules" class="my-3">
-          <div class="my-3">
+          <div class="mb-3">
             <label class="form-label">予定名</label>
             <input type="text" name="scheduleName" class="form-control" />
           </div>
-          <div class="my-3">
+          <div class="mb-3">
             <label class="form-label">メモ</label>
             <textarea name="memo" class="form-control"></textarea>
           </div>
-          <div class="my-3">
+          <div class="mb-3">
             <label class="form-label">候補日程 (改行して複数入力してください)</label>
             <textarea name="candidates" class="form-control"></textarea>
           </div>
@@ -61,9 +93,9 @@ app.get('/new', (c) => { // /schedules/new のパスにアクセスされたと�
 
 // 予定作成の内容を送信する処理
 // PrismaのDB処理は基本的に非同期I/O。そのため適宜awaitをつける。メソッドチェーンで書きたい場合はthen 関数を使う。
-app.post('/', async (c) => {
+app.post('/', scheduleFormValidator, async (c) => {
   const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
-  const body = await c.req.parseBody(); //POSTで受け取ったフォームのデータを取得
+  const body = c.req.valid('form'); //POSTで受け取ったフォームのデータを取得
   // 予定をDBに登録
   const { scheduleId } = await prisma.schedule.create({ //create()はテーブルに新しいレコードを作成するためのメソッド。createの前にawaitがあるので、次の処理は予定が保存し終わってから実行される。
     data: { //モデルで定義された属性を持つオブジェクトを指定
@@ -76,19 +108,19 @@ app.post('/', async (c) => {
   });
   // 候補日程を登録
   const candidateNames = parseCandidateNames(body.candidates); //候補作成処理の共通化で作成した関数を使う
-  await createCandidates(candidateNames, scheduleId); //候補作成処理の共通化で作成した関数を使う
+  await createCandidates(candidateNames, schedule.scheduleId); //候補作成処理の共通化で作成した関数を使う
   // 作成した予定のページにリダイレクト
   return c.redirect('/schedules/' + scheduleId);
 });
 
 // ----- 予定表示フォーム -----
 // 予定表示フォームにアクセスされたときの処理を追加
-app.get('/:scheduleId', async (c) => {
+app.get('/:scheduleId', scheduleIdValidator, async (c) => {
   const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
 
   // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
-    where: { scheduleId: c.req.param('scheduleId') },
+    where: { scheduleId: c.req.valid('param').scheduleId},
     include: { //includeは別のテーブルを結合してデータを取得するオプション
       user: { //Userテーブルを結合
         select: { //selectでuserIDとusernameのみを取得するよう指定
@@ -130,14 +162,14 @@ app.get('/:scheduleId', async (c) => {
   });
     // 閲覧ユーザと出欠に紐づくユーザからユーザ Map を作る
   const userMap = new Map(); // key: userId, value: User
-  userMap.set(parseInt(user.id, 10), { //parseInt関数で数値に変換。10進数で値を取得
+  userMap.set(parseInt(user.id), { //parseInt関数で数値に変換
     isSelf: true,
-    userId: parseInt(user.id, 10),
+    userId: parseInt(user.id),
     username: user.username,
   });
   availabilities.forEach((a) => {
     userMap.set(a.user.userId, {
-      isSelf: parseInt(user.id, 10) === a.user.userId, // 閲覧ユーザ自身であるかを示す真偽値
+      isSelf: parseInt(user.id) === a.user.userId, // 閲覧ユーザ自身であるかを示す真偽値
       userId: a.user.userId,
       username: a.user.username,
     });
@@ -182,7 +214,7 @@ app.get('/:scheduleId', async (c) => {
                 href="/schedules/${schedule.scheduleId}/edit"
                 class="btn btn-primary"
               >
-              この予定を編集する <i class="bi bi-pencil"></i>
+              この予定を編集する
             </a>`
         : ''}
         <h3 class="my-3">出欠表</h3>
@@ -263,12 +295,12 @@ function isMine(userId, schedule) {
   return schedule && parseInt(schedule.createdBy, 10) === parseInt(userId, 10);
 }
 // 予定編集フォームにアクセスされたときの処理を追加
-app.get('/:scheduleId/edit', async (c) => {
+app.get('/:scheduleId/edit', scheduleIdValidator, async (c) => {
   const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
 
   // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
-    where: { scheduleId: c.req.param('scheduleId') },
+    where: { scheduleId: c.req.valid('param').scheduleId},
   });
 
   // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
@@ -315,12 +347,14 @@ app.get('/:scheduleId/edit', async (c) => {
             <p>候補日程の追加 (改行して複数入力してください)</p>
             <textarea name="candidates" class="form-control"></textarea>
           </div>
-          <button type="submit" class="btn btn-primary">以上の内容で予定を編集する <i class="bi bi-pencil"></i>
+          <button type="submit" class="btn btn-primary">
+            以上の内容で予定を編集する
           </button>
         </form>
         <h3 class="my-3">危険な変更</h3>
         <form method="post" action="/schedules/${schedule.scheduleId}/delete">
-          <button type="submit" class="btn btn-danger">この予定を削除する <i class="bi bi-pencil"></i>
+          <button type="submit" class="btn btn-danger">
+            この予定を削除する
           </button>
         </form>
       `,
@@ -330,18 +364,18 @@ app.get('/:scheduleId/edit', async (c) => {
 
 // 予定編集の内容を送信する処理
 // PrismaのDB処理は基本的に非同期I/O。そのため適宜awaitをつける。メソッドチェーンで書きたい場合はthen 関数を使う。
-app.post('/:scheduleId/update', async (c) => {
+app.post('/:scheduleId/update', scheduleIdValidator, scheduleFormValidator, async (c) => {
   const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
   // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
-    where: { scheduleId: c.req.param('scheduleId') },
+    where: { scheduleId: c.req.valid('param').scheduleId},
   });
   // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
   if (!isMine(user.id, schedule)) {
     return c.notFound(); //ログインユーザーと作成者が同じでない場合には、404notFoundを表示する
   }
 
-  const body = await c.req.parseBody(); //POSTで受け取ったフォームのデータを取得
+  const body = c.req.valid('form'); //POSTで受け取ったフォームのデータを取得
   // 予定をDBに登録
   const updatedSchedule = await prisma.schedule.update({ //update()は既存のレコードを更新するためのメソッド。updateの前にawaitがあるので、次の処理は予定が保存し終わってから実行される。
     where: { scheduleId: schedule.scheduleId },
@@ -371,11 +405,11 @@ async function deleteScheduleAggregate(scheduleId) {
 }
 app.deleteScheduleAggregate = deleteScheduleAggregate;
 
-app.post('/:scheduleId/delete', async (c) => {
+app.post('/:scheduleId/delete', scheduleIdValidator, async (c) => {
   const { user } = c.get('session') ?? {}; //ユーザー情報を取り出し、ユーザー情報があればその値を使う、存在しなければ空オブジェクト{}を返す（エラーにならない）
   // DB（scheduleテーブル）から、予定を取得する。予定は作成日順で並べる。
   const schedule = await prisma.schedule.findUnique({ //findUniqueで指定した一意のキーに一致する単一のレコードを取得
-    where: { scheduleId: c.req.param('scheduleId') },
+    where: { scheduleId: c.req.valid('param').scheduleId},
   });
   // ログインしているユーザーと予定の作成者が同じなのか判定し、同じでない場合は404notFound、同じ場合はユーザーIDを読み込んで予定編集フォームを表示する
   if (!isMine(user.id, schedule)) {

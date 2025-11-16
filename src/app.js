@@ -3,17 +3,21 @@
 
 // ----- モジュールの読み込み -----　require('XX')でモジュール読み込み、{XX}でオブジェクトの中から特定のプロパティだけ取り出す分割代入
 const { Hono } = require('hono'); //Honoのモジュール
+const { csrf } = require('hono/csrf'); //CSRF脆弱性対策ミドルウェア
 const { logger } = require('hono/logger'); //サイトにアクセスされた際のログを自動で出力ミドルウェア
 const { html } = require('hono/html'); //HonoでHTMLを返すためのヘルパー。タグ付きテンプレートリテラル
 const { HTTPException } = require('hono/http-exception'); //Hono で HTTP の例外を扱うためのモジュール
 const { secureHeaders } = require('hono/secure-headers'); //Hono のセキュリティを強化するのに役立つミドルウェア
 const { env } = require('hono/adapter'); //	さまざまなランタイムで Hono を使うときに役立つヘルパー
+const { getCookie, deleteCookie } = require('hono/cookie'); //Cookieヘルパー。認証失敗後のログインページ表示時にどこからログインしようとしたか保存し認証後そのページに入れるようにするため
 const { serveStatic } = require('@hono/node-server/serve-static'); //	Hono の Node.js 用サーバ
 const { trimTrailingSlash } = require('hono/trailing-slash'); //URI の末尾にスラッシュがあるとき無視するミドルウェア
 const { githubAuth } = require('@hono/oauth-providers/github'); //Hono の認証用のミドルウェア OAuth Providers から GitHub 認証用のモジュールを読み込み
 const { getIronSession } = require('iron-session'); //セッション管理用のモジュール iron-session を読み込み。getIronSession はユーザから送信された Cookie からセッション情報を取り出すための関数
 const { PrismaClient } = require('@prisma/client'); //Prismaをインポートする
 const layout = require('./layout');
+
+const prisma = new PrismaClient({ log: ["query"] });
 
 // ----- ルートの読み込み -----
 const indexRouter = require('./routes/index'); //　/にアクセスされたときの処理にroutes/index.jsのHonoインスタンスを設定
@@ -25,12 +29,20 @@ const commentsRouter = require('./routes/comments');
 
 // ----- アプリケーション・DBの初期化 -----
 const app = new Hono();
-const prisma = new PrismaClient({ log: [ 'query' ] });
 
 // ----- ミドルウェア登録 ----- ミドルウェア＝リクエスト/レスポンスの間で挟む処理。元々のフレームワークの機能拡張としても使える。
+app.use(async (c, next) => {
+  const { CSRF_TRUSTED_ORIGIN } = env(c); //POSTリクエストのOriginヘッダ（URLのスキーム、ホスト名、ポート番号を組み合わせたもの）を確認し、どのサイトからのリクエストか判断。予定調整くん以外の情報が含まれる場合拒否する
+  const handler = csrf({
+    origin: CSRF_TRUSTED_ORIGIN,
+  });
+  await handler(c, next);
+});
 app.use(logger()); //ログ出力設定 //Honoのuse関数はミドルウェアを登録する関数
 app.use(serveStatic({ root: './public' })); //public 内の静的ファイルの配信設定
-app.use(secureHeaders()); //セキュリティの設定のためのヘッダを追加
+app.use(secureHeaders({ //セキュリティの設定のためのヘッダを追加
+  referrerPolicy: 'strict-origin-when-cross-origin', //strict-origin-when-cross-origin設定でOriginヘッダ（URLのスキーム、ホスト名、ポート番号を組み合わせたもの）が送信され、CSRFミドルウェアのチェックを通過できるようになる
+}));
 app.use(trimTrailingSlash()); //URI末尾の/を無視する設定
 
 // セッション管理用のミドルウェア
@@ -77,7 +89,13 @@ app.get('/auth/github', async (c) => {
     update: data,
     create: data,
   });
-  return c.redirect('/'); //認証の処理が完了するのでトップページにリダイレクトする
+  const loginFrom = getCookie(c, 'loginFrom'); //認証処理完了後、元々入ろうとしていた、Cookieに保存された値のURLページへリダイレクト
+  // オープンリダイレクタ脆弱性対策。Cookie の値はユーザが自由に編集できるため、自由に入力ができる部分に脆弱性が生まれがち
+  if (loginFrom && loginFrom.startsWith('/')) { //?from= 以下の文字列が/から始まるURLでのみ（内部ページのみ）リダイレクトを実施。偽の外部サイトにリダイレクトさせ信用あるページであるように見せるような脆弱性を防止
+    return c.redirect(loginFrom);
+  } else {
+    return c.redirect('/');
+  }
 });
 
 // ----- ルーティング（ルート登録） -----

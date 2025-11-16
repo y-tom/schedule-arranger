@@ -2,6 +2,7 @@
 // ----- モジュールの読み込み -----
 const { Hono } = require('hono');
 const { html } = require('hono/html');
+const { setCookie } = require('hono/cookie');
 const layout = require('../layout');
 
 // ----- アプリケーションの初期化 -----
@@ -9,7 +10,11 @@ const app = new Hono();
 
 // ----- ログイン処理 -----
 app.get('/', (c) => {
-  return c.html(
+  const from = c.req.query('from'); //ログインページ表示時にどこからログインしようとしたかを10分間Cookieに保存
+  if (from) {
+    setCookie(c, 'loginFrom', from, { maxAge: 1000 * 60 * 10 });
+  }
+  return c.html( //ログインページを表示
     layout( //layout.jsで作成したlayout関数にtitle（'Login'）とbody（html`~`）を渡してHTMLを描画。少ない記述量で HTML を書ける。
       c,
       'Login',

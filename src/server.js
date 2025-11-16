@@ -4,7 +4,7 @@ const { serve } = require('@hono/node-server');
 const app = require('./app'); //app.js ファイルでアプリを読み込む。ロード状態
 
 // ----- サーバー設定 -----
-const port = 3000; //サーバーが待ち受けるポート番号。http://localhost:3000/ にアクセスするとアプリが応答。
+const port = Number(process.env.PORT) || 3000; //サーバーが待ち受けるポート番号。Renderか、http://localhost:3000/ にアクセスするとアプリが応答。
 console.log(`Server running at http://localhost:${port}/`);
 
 // ----- サーバー起動 -----
